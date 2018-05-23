@@ -230,6 +230,7 @@ EOF
 
 test_case default-conflict \
  --before='setup-conflict.sh > config.setup' \
+ --todo="Fails on Cygwin" \
  --script='
  	:view-diff
 	:7
@@ -272,6 +273,7 @@ EOF
 test_case noprefix-conflict \
  --before='git config diff.noprefix true' \
  --after='git config diff.noprefix false' \
+ --todo="Fails on Cygwin" \
  --script='
  	:view-diff
 	:7
@@ -342,14 +344,6 @@ tracer/src/main/scala/org/scalajs/benchmark/tracer/Tracer.scala
   lazy val deltablue = project("DeltaBlue", defaultSettings).dependsOn(common)
 +2 project/build.sbt
     url("http://repo.scala-js.org/repo/snapshots/"))(Resolver.ivyStylePatterns)
-+2 conflict-file
-c'
-+5 conflict-file
->>>>>>> conflict-branch
-+2 conflict-file
-c'
-+5 conflict-file
->>>>>>> conflict-branch
 EOF
 
 assert_equals 'exec-env' <<EOF
