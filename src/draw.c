@@ -17,6 +17,20 @@
 #include "tig/options.h"
 #include "compat/hashtab.h"
 
+#define ANSI_OFF       (1<<0)
+#define ANSI_BLINK     (1<<1)
+#define ANSI_BOLD      (1<<2)
+#define ANSI_UNDERLINE (1<<3)
+#define ANSI_REVERSE   (1<<4)
+#define ANSI_COLOR     (1<<5)
+
+typedef struct _ansi_attr {
+  int attr;
+  int fg;
+  int bg;
+  int pair;
+} ansi_attr;
+
 static const enum line_type palette_colors[] = {
 	LINE_PALETTE_0,
 	LINE_PALETTE_1,
@@ -41,7 +55,7 @@ static const enum line_type palette_colors[] = {
 static inline void
 set_view_attr(struct view *view, enum line_type type)
 {
-	if (!view->curline->selected && view->curtype != type) {
+	if (!view->curline->selected && view->curtype != type && type != LINE_RAW_ANSI) {
 		(void) wattrset(view->win, get_view_attr(view, type));
 		wchgat(view->win, -1, 0, get_view_color(view, type), NULL);
 #if defined(NCURSES_VERSION_PATCH) && NCURSES_VERSION_PATCH < 20061217
@@ -105,10 +119,144 @@ draw_space(struct view *view, enum line_type type, int max, int spaces)
 	return VIEW_MAX_LEN(view) <= 0;
 }
 
+static bool is_ansi (const char *buf)
+{
+	while (*buf && (isdigit(*buf) || *buf == ';'))
+		buf++;
+	return (*buf == 'm');
+}
+
+static size_t grok_ansi(const char *buf, size_t pos, ansi_attr *a)
+{
+#define option(a) 1
+	size_t x = pos;
+
+	while (isdigit(buf[x]) || buf[x] == ';')
+		x++;
+
+	/* Character Attributes */
+	if (option (OPTALLOWANSI) && a != NULL && buf[x] == 'm')
+	{
+		if (pos == x)
+		{
+#ifdef HAVE_COLOR
+			if (a->pair != -1)
+				mutt_free_color (a->fg, a->bg);
+#endif
+			a->attr = ANSI_OFF;
+			a->pair = -1;
+		}
+		while (pos < x)
+		{
+			if (buf[pos] == '1' && (pos+1 == x || buf[pos+1] == ';'))
+			{
+				a->attr |= ANSI_BOLD;
+				pos += 2;
+			}
+			else if (buf[pos] == '4' && (pos+1 == x || buf[pos+1] == ';'))
+			{
+				a->attr |= ANSI_UNDERLINE;
+				pos += 2;
+			}
+			else if (buf[pos] == '5' && (pos+1 == x || buf[pos+1] == ';'))
+			{
+				a->attr |= ANSI_BLINK;
+				pos += 2;
+			}
+			else if (buf[pos] == '7' && (pos+1 == x || buf[pos+1] == ';'))
+			{
+				a->attr |= ANSI_REVERSE;
+				pos += 2;
+			}
+			else if (buf[pos] == '0' && (pos+1 == x || buf[pos+1] == ';'))
+			{
+#ifdef HAVE_COLOR
+				if (a->pair != -1)
+					mutt_free_color(a->fg,a->bg);
+#endif
+				a->attr = ANSI_OFF;
+				a->pair = -1;
+				pos += 2;
+			}
+			else if (buf[pos] == '3' && isdigit(buf[pos+1]))
+			{
+#ifdef HAVE_COLOR
+				if (a->pair != -1)
+					mutt_free_color(a->fg,a->bg);
+#endif
+				a->pair = -1;
+				a->attr |= ANSI_COLOR;
+				a->fg = buf[pos+1] - '0';
+				pos += 3;
+			}
+			else if (buf[pos] == '4' && isdigit(buf[pos+1]))
+			{
+#ifdef HAVE_COLOR
+				if (a->pair != -1)
+					mutt_free_color(a->fg,a->bg);
+#endif
+				a->pair = -1;
+				a->attr |= ANSI_COLOR;
+				a->bg = buf[pos+1] - '0';
+				pos += 3;
+			}
+			else
+			{
+				while (pos < x && buf[pos] != ';') pos++;
+				pos++;
+			}
+		}
+	}
+	pos = x;
+	return pos;
+}
+
+
+static size_t
+handle_ansi_segment(struct view *view, const char *source_string, char *dest_string, const enum line_type default_type, enum line_type *output_type)
+{
+	size_t source_pos;
+	size_t source_len;
+	size_t dest_pos;
+	ansi_attr attr = {0, 0, 0, 0};
+
+	source_len = strlen(source_string);
+	for (source_pos=0, dest_pos=0; source_pos<source_len; ) {
+		while (source_len-source_pos >= 2          &&
+		       source_string[source_pos] == '\033' &&
+		       source_string[source_pos+1] == '['  &&
+		       is_ansi(source_string+source_pos+2)
+		      )
+		{
+			source_pos = grok_ansi(source_string, source_pos+2, &attr) + 1;
+		}
+
+		dest_string[dest_pos++] = source_string[source_pos++];
+	}
+
+	dest_string[dest_pos] = '\0';
+
+	if (attr.attr & ANSI_COLOR) {
+		*output_type = LINE_RAW_ANSI;
+
+		// TODO: Apply the desired colors
+		wchgat(view->win, -1, 0, 0, NULL);
+#if defined(NCURSES_VERSION_PATCH) && NCURSES_VERSION_PATCH < 20061217
+		touchwin(view->win);
+#endif
+	} else {
+		*output_type = default_type;
+	}
+
+	return source_pos;
+}
+
+
 static bool
 draw_text_expanded(struct view *view, enum line_type type, const char *string, int length, int max_width, bool use_tilde)
 {
 	static char text[SIZEOF_STR];
+	static char ansi_segment[SIZEOF_STR];
 
 	if (length == -1)
 		length = strlen(string);
@@ -117,8 +265,14 @@ draw_text_expanded(struct view *view, enum line_type type, const char *string, i
 		size_t pos = string_expand(text, sizeof(text), string, length, opt_tab_size);
 		size_t col = view->col;
 
-		if (draw_chars(view, type, text, -1, max_width, use_tilde))
-			return true;
+		size_t next_pos = 0;
+		do {
+			enum line_type o_type;
+			next_pos += handle_ansi_segment(view, &text[next_pos], ansi_segment, type, &o_type);
+
+			if (draw_chars(view, o_type, ansi_segment, -1, max_width, use_tilde))
+				return true;
+		} while (text[next_pos]);
 		string += pos;
 		length -= pos;
 		max_width -= view->col - col;
