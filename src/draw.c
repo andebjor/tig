@@ -75,7 +75,23 @@ draw_chars(struct view *view, enum line_type type, const char *string, int lengt
 
 	set_view_attr(view, type);
 	if (len > 0)
-		waddnstr(view->win, string, len);
+	{
+		if (opt_diff_hide_signs &&
+		    view->col == 0      &&
+		    (type == LINE_DIFF_ADD || type == LINE_DIFF_DEL)
+		   ) {
+			if (len == 1) { // highlight empty lines by the highlight propery
+				if (type == LINE_DIFF_ADD)
+					set_view_attr(view, LINE_DIFF_ADD_HIGHLIGHT);
+				else if (type == LINE_DIFF_DEL)
+					set_view_attr(view, LINE_DIFF_DEL_HIGHLIGHT);
+			}
+			waddnstr(view->win, " ", 1);
+			waddnstr(view->win, string+1, len-1);
+		} else {
+			waddnstr(view->win, string, len);
+		}
+	}
 
 	if (trimmed && use_tilde) {
 		set_view_attr(view, LINE_DELIMITER);
