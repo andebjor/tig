@@ -80,13 +80,15 @@ draw_chars(struct view *view, enum line_type type, const char *string, int lengt
 		    view->col == 0      &&
 		    (type == LINE_DIFF_ADD || type == LINE_DIFF_DEL)
 		   ) {
-			if (len == 1) { // highlight empty lines by the highlight propery
-				if (type == LINE_DIFF_ADD)
-					set_view_attr(view, LINE_DIFF_ADD_HIGHLIGHT);
-				else if (type == LINE_DIFF_DEL)
-					set_view_attr(view, LINE_DIFF_DEL_HIGHLIGHT);
-			}
+			/* Mark first column by color-only for add/del line */
+			if (type == LINE_DIFF_ADD)
+				set_view_attr(view, LINE_DIFF_ADD_HIGHLIGHT);
+			else if (type == LINE_DIFF_DEL)
+				set_view_attr(view, LINE_DIFF_DEL_HIGHLIGHT);
 			waddnstr(view->win, " ", 1);
+
+			/* Add the actual diff line */
+			set_view_attr(view, type);
 			waddnstr(view->win, string+1, len-1);
 		} else {
 			waddnstr(view->win, string, len);

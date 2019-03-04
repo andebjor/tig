@@ -275,10 +275,10 @@ The following variables can be set:
 	Hide the leading `+` and `-` signs in diff output. Copy-paste of lines
 	from the diff view may be aided by this option. Enabling this only makes
 	sense when coloring is used to distinguish added and removed lines.
-	Removed and added empty lines are indicated by a space highlighted by
-	the color `diff-add-highlight` or `diff-del-highlight`, respectively.
-	Keeping the `standout` (reverse) property set for these is suggested, as
-	white space is otherwise invisible. Off by default.
+	Removed and added lines are indicated in the first column by a space
+	highlighted by the color `diff-add-highlight` or `diff-del-highlight`,
+	respectively. Keeping the `standout` (reverse) property set for these is
+	suggested, as white space is otherwise invisible. Off by default.
 
 'diff-highlight' (mixed)::
 
